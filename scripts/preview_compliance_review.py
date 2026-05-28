@@ -18,6 +18,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from open_deep_research.compliance.retrieval import ComplianceRetriever
 from open_deep_research.compliance.review_topics import select_review_topics
+from open_deep_research.compliance.clause_store import ClauseStore, clause_file_for_index
 from open_deep_research.configuration import Configuration
 
 
@@ -36,6 +37,7 @@ def main() -> int:
     args = parser.parse_args()
 
     retriever = ComplianceRetriever.from_index_dir(args.index_dir)
+    clause_store = ClauseStore.from_path(clause_file_for_index(args.index_dir))
     topics = select_review_topics(args.request)
     print(f"Request: {args.request}")
     print(f"Selected topics: {len(topics)}")
@@ -44,6 +46,7 @@ def main() -> int:
         print("\n" + "=" * 100)
         print(f"{topic.title} [{topic.topic_id}]")
         print(f"Expected evidence: {topic.expected_evidence}")
+        _print_clauses(clause_store.get_many(topic.standard_clause_refs))
         _print_results(
             "Official standard evidence",
             retriever.search(topic.standard_query, source_type="standard", top_k=args.standard_top_k),
@@ -63,6 +66,18 @@ def main() -> int:
     return 0
 
 
+def _print_clauses(clauses) -> None:
+    print(f"\nStructured standard clauses: {len(clauses)} result(s)")
+    if not clauses:
+        print("- No structured clauses found.")
+        return
+    for index, clause in enumerate(clauses, start=1):
+        pages = f"page {clause.page_start}" if clause.page_start else "pages unavailable"
+        if clause.page_end and clause.page_start and clause.page_end != clause.page_start:
+            pages = f"pages {clause.page_start}-{clause.page_end}"
+        print(f"- {index}. {clause.standard} {clause.clause_id} {clause.title} ({pages})")
+
+
 def _print_results(title: str, results, full: bool) -> None:
     print(f"\n{title}: {len(results)} result(s)")
     if not results:
@@ -77,7 +92,7 @@ def _print_results(title: str, results, full: bool) -> None:
         if item.row_range:
             location.append(f"rows {item.row_range}")
         location_text = ", ".join(location) or "location unavailable"
-        print(f"- {index}. {item.file_name} ({location_text}, score={item.score})")
+        print(f"- {index}. [{item.evidence_id}] {item.file_name} ({location_text}, score={item.score})")
         if full:
             print(f"  {item.excerpt[:700].replace(chr(10), ' ')}")
 

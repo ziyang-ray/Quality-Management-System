@@ -39,6 +39,59 @@ class Configuration(BaseModel):
     """Main configuration class for the Deep Research agent."""
     
     # General Configuration
+    assistant_name: str = Field(
+        default="Siemens Healthineers Compliance Assistant",
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "Siemens Healthineers Compliance Assistant",
+                "description": "Display name and role identity for the assistant"
+            }
+        }
+    )
+    organization_name: str = Field(
+        default="Siemens Healthineers",
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "Siemens Healthineers",
+                "description": "Organization name used in prompts and compliance reports"
+            }
+        }
+    )
+    business_region: str = Field(
+        default="Unspecified",
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "Unspecified",
+                "description": "Business region or country context for compliance analysis"
+            }
+        }
+    )
+    compliance_scope: str = Field(
+        default=(
+            "medical technology compliance, healthcare compliance, internal policies, "
+            "privacy, quality, anti-corruption, procurement, marketing, and interactions "
+            "with healthcare professionals"
+        ),
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "description": "Compliance domains the assistant should prioritize"
+            }
+        }
+    )
+    external_search_allowed: bool = Field(
+        default=False,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": False,
+                "description": "Whether the assistant may use external web search. Keep disabled for confidential internal work."
+            }
+        }
+    )
     max_structured_output_retries: int = Field(
         default=3,
         metadata={
@@ -76,17 +129,17 @@ class Configuration(BaseModel):
     )
     # Research Configuration
     search_api: SearchAPI = Field(
-        default=SearchAPI.TAVILY,
+        default=SearchAPI.NONE,
         metadata={
             "x_oap_ui_config": {
                 "type": "select",
-                "default": "tavily",
-                "description": "Search API to use for research. NOTE: Make sure your Researcher Model supports the selected search API.",
+                "default": "none",
+                "description": "External search API to use only when external_search_allowed is enabled. NOTE: Make sure your Researcher Model supports the selected search API.",
                 "options": [
+                    {"label": "None", "value": SearchAPI.NONE.value},
                     {"label": "Tavily", "value": SearchAPI.TAVILY.value},
                     {"label": "OpenAI Native Web Search", "value": SearchAPI.OPENAI.value},
-                    {"label": "Anthropic Native Web Search", "value": SearchAPI.ANTHROPIC.value},
-                    {"label": "None", "value": SearchAPI.NONE.value}
+                    {"label": "Anthropic Native Web Search", "value": SearchAPI.ANTHROPIC.value}
                 ]
             }
         }
@@ -114,6 +167,50 @@ class Configuration(BaseModel):
                 "max": 30,
                 "step": 1,
                 "description": "Maximum number of tool calling iterations to make in a single researcher step."
+            }
+        }
+    )
+    internal_knowledge_base_path: Optional[str] = Field(
+        default=None,
+        optional=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "description": "Local folder path containing internal compliance documents for retrieval"
+            }
+        }
+    )
+    internal_search_file_globs: str = Field(
+        default="*.md,*.txt,*.pdf",
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "*.md,*.txt,*.pdf",
+                "description": "Comma-separated file patterns to include in internal document search"
+            }
+        }
+    )
+    internal_search_max_results: int = Field(
+        default=5,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 5,
+                "min": 1,
+                "max": 20,
+                "description": "Maximum number of internal document chunks returned per search"
+            }
+        }
+    )
+    internal_search_chunk_chars: int = Field(
+        default=3500,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 3500,
+                "min": 1000,
+                "max": 12000,
+                "description": "Approximate character size for internal document chunks"
             }
         }
     )
@@ -233,21 +330,21 @@ class Configuration(BaseModel):
     )
     # Compliance review configuration
     official_docs_path: str = Field(
-        default=r"G:\合规助手\官方文件",
+        default="./data/official_docs",
         metadata={
             "x_oap_ui_config": {
                 "type": "text",
-                "default": r"G:\合规助手\官方文件",
+                "default": "./data/official_docs",
                 "description": "Path containing official standards and regulations for compliance review"
             }
         }
     )
     internal_docs_path: str = Field(
-        default=r"G:\合规助手\部门内部文件",
+        default="./data/internal_docs",
         metadata={
             "x_oap_ui_config": {
                 "type": "text",
-                "default": r"G:\合规助手\部门内部文件",
+                "default": "./data/internal_docs",
                 "description": "Path containing internal QMS documents for compliance review"
             }
         }
@@ -269,6 +366,49 @@ class Configuration(BaseModel):
                 "type": "boolean",
                 "default": True,
                 "description": "Require cited internal evidence before classifying an item as compliant"
+            }
+        }
+    )
+    knowledge_graph_dir: Optional[str] = Field(
+        default="data/compliance_graph",
+        optional=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "data/compliance_graph",
+                "description": "Directory containing compliance knowledge graph (nodes.jsonl, edges.jsonl)"
+            }
+        }
+    )
+    skills_dir: Optional[str] = Field(
+        default="data/skills",
+        optional=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "data/skills",
+                "description": "Directory containing department skill packs (*.skill.yaml)"
+            }
+        }
+    )
+    memory_dir: Optional[str] = Field(
+        default="data/review_memory",
+        optional=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "default": "data/review_memory",
+                "description": "Directory for storing review memory and human feedback"
+            }
+        }
+    )
+    include_draft_skills: bool = Field(
+        default=False,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": False,
+                "description": "Whether to include draft skills in formal reviews (for testing only)"
             }
         }
     )

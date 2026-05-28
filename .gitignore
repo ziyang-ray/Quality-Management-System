@@ -61,8 +61,19 @@ node_modules/
 
 # LangGraph specific
 .langgraph/
+
+# Data files (sensitive / generated)
 data/compliance_index/
 data/standard_clauses/
+data/compliance_graph/
+data/skills/
+data/review_memory/
+data/official_docs/
+data/internal_docs/
+
+# Reports
+reports/
+runs/
 
 # Temporary files
 tmp/

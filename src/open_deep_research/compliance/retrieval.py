@@ -90,6 +90,7 @@ def _tokenize(text: str) -> list[str]:
 
 def _to_evidence(chunk: DocumentChunk, score: float, query: str) -> EvidenceItem:
     return EvidenceItem(
+        evidence_id=chunk.chunk_id,
         file_name=chunk.file_name,
         path=chunk.path,
         excerpt=_excerpt(chunk.text, query),

@@ -1,149 +1,178 @@
-# 🔬 Open Deep Research
+# QMS Compliance Assistant
 
-<img width="1388" height="298" alt="full_diagram" src="https://github.com/user-attachments/assets/12a2371b-8be2-4219-9b48-90503eb43c69" />
+基于 LangGraph 的西门子医疗内部质量体系合规审查 Agent 系统。
 
-Deep research has broken out as one of the most popular agent applications. This is a simple, configurable, fully open source deep research agent that works across many model providers, search tools, and MCP servers. It's performance is on par with many popular deep research agents ([see Deep Research Bench leaderboard](https://huggingface.co/spaces/Ayanami0730/DeepResearch-Leaderboard)).
+按 ISO 13485:2016 / ISO 14971:2019 标准条款，对内部 QMS 文件进行证据驱动的自动化预审。
 
-<img width="817" height="666" alt="Screenshot 2025-07-13 at 11 21 12 PM" src="https://github.com/user-attachments/assets/052f2ed3-c664-4a4f-8ec2-074349dcaa3f" />
+## 功能
 
-### 🔥 Recent Updates
+- **条款级审查**：按具体标准条款（如 8.5.2 纠正措施）逐条审查
+- **主题级审查**：按审查主题（CAPA、内部审核、供应商管理等）分组审查
+- **多智能体协作**：法规审核员 + 内部QMS审核员 + 风险评审员 + 审计总监
+- **知识图谱**：条款 → 流程 → 程序 → 记录的证据链导航
+- **技能包**：部门审核经验沉淀，支持 YAML 格式 + 审批流程
+- **审计记忆**：审查历史、人工反馈、行动跟踪的持久化
+- **流式输出**：实时显示审查进度和报告生成过程
 
-**August 14, 2025**: See our free course [here](https://academy.langchain.com/courses/deep-research-with-langgraph) (and course repo [here](https://github.com/langchain-ai/deep_research_from_scratch)) on building open deep research.
+## 快速开始
 
-**August 7, 2025**: Added GPT-5 and updated the Deep Research Bench evaluation w/ GPT-5 results.
+### 1. 环境要求
 
-**August 2, 2025**: Achieved #6 ranking on the [Deep Research Bench Leaderboard](https://huggingface.co/spaces/Ayanami0730/DeepResearch-Leaderboard) with an overall score of 0.4344. 
+- Python >= 3.10
+- API Key（OpenAI / Anthropic / 自定义 API）
 
-**July 30, 2025**: Read about the evolution from our original implementations to the current version in our [blog post](https://rlancemartin.github.io/2025/07/30/bitter_lesson/).
+### 2. 安装依赖
 
-**July 16, 2025**: Read more in our [blog](https://blog.langchain.com/open-deep-research/) and watch our [video](https://www.youtube.com/watch?v=agGiWUpxkhg) for a quick overview.
-
-### 🚀 Quickstart
-
-1. Clone the repository and activate a virtual environment:
 ```bash
-git clone https://github.com/langchain-ai/open_deep_research.git
-cd open_deep_research
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+cd open_deep_research-main
+pip install -e .
 ```
 
-2. Install dependencies:
-```bash
-uv sync
-# or
-uv pip install -r pyproject.toml
-```
+### 3. 配置 API
 
-3. Set up your `.env` file to customize the environment variables (for model selection, search tools, and other configuration settings):
+复制 `.env.example` 为 `.env`，填入你的 API Key：
+
 ```bash
 cp .env.example .env
 ```
 
-4. Launch agent with the LangGraph server locally:
+`.env` 文件内容：
 
 ```bash
-# Install dependencies and start the LangGraph server
-uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 langgraph dev --allow-blocking
+# API 配置（三选一）
+OPENAI_API_KEY=your-key-here
+# 或
+ANTHROPIC_API_KEY=your-key-here
+# 或自定义 API
+OPENAI_API_KEY=your-key-here
+OPENAI_API_BASE=https://your-api-endpoint/v1
+
+# 模型配置
+FINAL_REPORT_MODEL=anthropic:claude-3-5-sonnet-20241022
 ```
 
-This will open the LangGraph Studio UI in your browser.
+### 4. 构建索引
 
-```
-- 🚀 API: http://127.0.0.1:2024
-- 🎨 Studio UI: https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024
-- 📚 API Docs: http://127.0.0.1:2024/docs
-```
-
-Ask a question in the `messages` input field and click `Submit`. Select different configuration in the "Manage Assistants" tab.
-
-### ⚙️ Configurations
-
-#### LLM :brain:
-
-Open Deep Research supports a wide range of LLM providers via the [init_chat_model() API](https://python.langchain.com/docs/how_to/chat_models_universal_init/). It uses LLMs for a few different tasks. See the below model fields in the [configuration.py](https://github.com/langchain-ai/open_deep_research/blob/main/src/open_deep_research/configuration.py) file for more details. This can be accessed via the LangGraph Studio UI. 
-
-- **Summarization** (default: `openai:gpt-4.1-mini`): Summarizes search API results
-- **Research** (default: `openai:gpt-4.1`): Power the search agent
-- **Compression** (default: `openai:gpt-4.1`): Compresses research findings
-- **Final Report Model** (default: `openai:gpt-4.1`): Write the final report
-
-> Note: the selected model will need to support [structured outputs](https://python.langchain.com/docs/integrations/chat/) and [tool calling](https://python.langchain.com/docs/how_to/tool_calling/).
-
-> Note: For OpenRouter: Follow [this guide](https://github.com/langchain-ai/open_deep_research/issues/75#issuecomment-2811472408) and for local models via Ollama  see [setup instructions](https://github.com/langchain-ai/open_deep_research/issues/65#issuecomment-2743586318).
-
-#### Search API :mag:
-
-Open Deep Research supports a wide range of search tools. By default it uses the [Tavily](https://www.tavily.com/) search API. Has full MCP compatibility and work native web search for Anthropic and OpenAI. See the `search_api` and `mcp_config` fields in the [configuration.py](https://github.com/langchain-ai/open_deep_research/blob/main/src/open_deep_research/configuration.py) file for more details. This can be accessed via the LangGraph Studio UI. 
-
-#### Other 
-
-See the fields in the [configuration.py](https://github.com/langchain-ai/open_deep_research/blob/main/src/open_deep_research/configuration.py) for various other settings to customize the behavior of Open Deep Research. 
-
-### 📊 Evaluation
-
-Open Deep Research is configured for evaluation with [Deep Research Bench](https://huggingface.co/spaces/Ayanami0730/DeepResearch-Leaderboard). This benchmark has 100 PhD-level research tasks (50 English, 50 Chinese), crafted by domain experts across 22 fields (e.g., Science & Tech, Business & Finance) to mirror real-world deep-research needs. It has 2 evaluation metrics, but the leaderboard is based on the RACE score. This uses LLM-as-a-judge (Gemini) to evaluate research reports against a golden set of reports compiled by experts across a set of metrics.
-
-#### Usage
-
-> Warning: Running across the 100 examples can cost ~$20-$100 depending on the model selection.
-
-The dataset is available on [LangSmith via this link](https://smith.langchain.com/public/c5e7a6ad-fdba-478c-88e6-3a388459ce8b/d). To kick off evaluation, run the following command:
+首次使用需要构建文档索引：
 
 ```bash
-# Run comprehensive evaluation on LangSmith datasets
-python tests/run_evaluate.py
+# 构建证据索引（扫描 data/official_docs 和 data/internal_docs）
+python scripts/build_compliance_index.py
+
+# 构建知识图谱
+python scripts/build_initial_knowledge_graph.py
 ```
 
-This will provide a link to a LangSmith experiment, which will have a name `YOUR_EXPERIMENT_NAME`. Once this is done, extract the results to a JSONL file that can be submitted to the Deep Research Bench.
+### 5. 运行审查
 
 ```bash
-python tests/extract_langsmith_data.py --project-name "YOUR_EXPERIMENT_NAME" --model-name "you-model-name" --dataset-name "deep_research_bench"
+# 预览证据（不调用 LLM，用于调试检索质量）
+python scripts/preview_compliance_review.py --request "请审查 CAPA" --full
+
+# 生成审查报告
+python scripts/run_compliance_review.py --request "请审查 CAPA" --output reports/capa.md
+
+# 流式输出
+python scripts/run_compliance_review.py --request "请审查 CAPA" --stream
+
+# 多智能体审查
+python scripts/run_multi_agent_review.py
 ```
 
-This creates `tests/expt_results/deep_research_bench_model-name.jsonl` with the required format. Move the generated JSONL file to a local clone of the Deep Research Bench repository and follow their [Quick Start guide](https://github.com/Ayanami0730/deep_research_bench?tab=readme-ov-file#quick-start) for evaluation submission.
+## 项目结构
 
-#### Results 
+```
+open_deep_research-main/
+├── src/open_deep_research/
+│   ├── compliance_reviewer.py      # 合规审查 LangGraph 工作流
+│   ├── compliance/                 # 合规模块
+│   │   ├── schemas.py              #   20 个 Pydantic 数据模型
+│   │   ├── document_loader.py      #   PDF/DOCX/XLSX/XLSM 解析
+│   │   ├── chunking.py             #   文本切分（1800字符/chunk）
+│   │   ├── retrieval.py            #   BM25 检索引擎
+│   │   ├── clause_extraction.py    #   标准条款自动抽取
+│   │   ├── clause_store.py         #   条款库管理
+│   │   ├── knowledge_graph.py      #   轻量知识图谱
+│   │   ├── skill_loader.py         #   部门技能包加载
+│   │   ├── review_memory.py        #   审计记忆系统
+│   │   ├── evidence_planner.py     #   证据检索规划器
+│   │   ├── compliance_orchestra.py #   多智能体编排
+│   │   ├── review_topics.py        #   10 个 MVP 审查主题
+│   │   ├── prompts.py              #   提示词模板
+│   │   └── renderers.py            #   Markdown 报告渲染
+│   └── configuration.py            # 统一配置
+├── scripts/                        # CLI 工具
+├── tests/                          # 测试
+└── data/
+    ├── official_docs/              # ISO 标准原文（不入 Git）
+    ├── internal_docs/              # 内部 QMS 文件（不入 Git）
+    ├── compliance_index/           # 证据索引
+    ├── standard_clauses/           # 条款库（198 条）
+    ├── compliance_graph/           # 知识图谱
+    ├── skills/                     # 技能包
+    └── review_memory/              # 审计记忆
+```
 
-| Name | Commit | Summarization | Research | Compression | Total Cost | Total Tokens | RACE Score | Experiment |
-|------|--------|---------------|----------|-------------|------------|--------------|------------|------------|
-| GPT-5 | [ca3951d](https://github.com/langchain-ai/open_deep_research/pull/168/commits) | openai:gpt-4.1-mini | openai:gpt-5 | openai:gpt-4.1 |  | 204,640,896 | 0.4943 | [Link](https://smith.langchain.com/o/ebbaf2eb-769b-4505-aca2-d11de10372a4/datasets/6e4766ca-613c-4bda-8bde-f64f0422bbf3/compare?selectedSessions=4d5941c8-69ce-4f3d-8b3e-e3c99dfbd4cc&baseline=undefined) |
-| Defaults | [6532a41](https://github.com/langchain-ai/open_deep_research/commit/6532a4176a93cc9bb2102b3d825dcefa560c85d9) | openai:gpt-4.1-mini | openai:gpt-4.1 | openai:gpt-4.1 | $45.98 | 58,015,332 | 0.4309 | [Link](https://smith.langchain.com/o/ebbaf2eb-769b-4505-aca2-d11de10372a4/datasets/6e4766ca-6[…]ons=cf4355d7-6347-47e2-a774-484f290e79bc&baseline=undefined) |
-| Claude Sonnet 4 | [f877ea9](https://github.com/langchain-ai/open_deep_research/pull/163/commits/f877ea93641680879c420ea991e998b47aab9bcc) | openai:gpt-4.1-mini | anthropic:claude-sonnet-4-20250514 | openai:gpt-4.1 | $187.09 | 138,917,050 | 0.4401 | [Link](https://smith.langchain.com/o/ebbaf2eb-769b-4505-aca2-d11de10372a4/datasets/6e4766ca-6[…]ons=04f6002d-6080-4759-bcf5-9a52e57449ea&baseline=undefined) |
-| Deep Research Bench Submission | [c0a160b](https://github.com/langchain-ai/open_deep_research/commit/c0a160b57a9b5ecd4b8217c3811a14d8eff97f72) | openai:gpt-4.1-nano | openai:gpt-4.1 | openai:gpt-4.1 | $87.83 | 207,005,549 | 0.4344 | [Link](https://smith.langchain.com/o/ebbaf2eb-769b-4505-aca2-d11de10372a4/datasets/6e4766ca-6[…]ons=e6647f74-ad2f-4cb9-887e-acb38b5f73c0&baseline=undefined) |
+## 审查主题
 
-### 🚀 Deployments and Usage
+系统内置 10 个 ISO 13485 MVP 审查主题：
 
-#### LangGraph Studio
+| 主题 | 条款 | 说明 |
+|------|------|------|
+| 文件控制 | 4.2.4 | 文件评审批准、版本控制、分发 |
+| 记录控制 | 4.2.5 | 记录标识、储存、保存期限 |
+| 培训与人员能力 | 6.2 | 岗位能力、培训记录、有效性 |
+| 变更管理 | 4.1.4 | 变更申请、影响评估、验证 |
+| CAPA | 8.5.2, 8.5.3 | 纠正措施、预防措施 |
+| 内部审核 | 8.2.4 | 审核方案、审核报告、不符合项 |
+| 不合格品控制 | 8.3.1-8.3.4 | 识别、隔离、处置、让步 |
+| 供应商质量管理 | 7.4.1-7.4.3 | 供应商评价、来料验证 |
+| 风险管理接口 | 7.1, 8.2.1, ISO 14971 | 风险管理文件、风险控制 |
+| 产品放行与 DHR | 7.5.1, 8.2.6 | 最终检验、DHR 完整性 |
 
-Follow the [quickstart](#-quickstart) to start LangGraph server locally and test the agent out on LangGraph Studio.
+## 使用示例
 
-#### Hosted deployment
- 
-You can easily deploy to [LangGraph Platform](https://langchain-ai.github.io/langgraph/concepts/#deployment-options). 
+### 审查单个条款
 
-#### Open Agent Platform
+```python
+import asyncio
+from scripts.run_clause_review import review_single_clause
 
-Open Agent Platform (OAP) is a UI from which non-technical users can build and configure their own agents. OAP is great for allowing users to configure the Deep Researcher with different MCP tools and search APIs that are best suited to their needs and the problems that they want to solve.
+asyncio.run(review_single_clause("ISO 13485:2016", "8.5.2"))
+```
 
-We've deployed Open Deep Research to our public demo instance of OAP. All you need to do is add your API Keys, and you can test out the Deep Researcher for yourself! Try it out [here](https://oap.langchain.com)
+### 自定义审查请求
 
-You can also deploy your own instance of OAP, and make your own custom agents (like Deep Researcher) available on it to your users.
-1. [Deploy Open Agent Platform](https://docs.oap.langchain.com/quickstart)
-2. [Add Deep Researcher to OAP](https://docs.oap.langchain.com/setup/agents)
+```bash
+# 审查多个主题
+python scripts/run_compliance_review.py \
+  --request "请审查 CAPA、内部审核和不合格品控制" \
+  --output reports/review.md
 
-### Legacy Implementations 🏛️
+# 保存证据包和结构化报告
+python scripts/run_compliance_review.py \
+  --request "请审查供应商质量管理" \
+  --artifacts-dir runs
+```
 
-The `src/legacy/` folder contains two earlier implementations that provide alternative approaches to automated research. They are less performant than the current implementation, but provide alternative ideas understanding the different approaches to deep research.
+## 技术栈
 
-#### 1. Workflow Implementation (`legacy/graph.py`)
-- **Plan-and-Execute**: Structured workflow with human-in-the-loop planning
-- **Sequential Processing**: Creates sections one by one with reflection
-- **Interactive Control**: Allows feedback and approval of report plans
-- **Quality Focused**: Emphasizes accuracy through iterative refinement
+- **Agent 框架**：LangGraph >= 0.5.4
+- **LLM 集成**：LangChain（支持 OpenAI / Anthropic / Google / DeepSeek / Groq）
+- **数据模型**：Pydantic v2
+- **文档解析**：pymupdf, python-docx, openpyxl
+- **检索算法**：BM25（k1=1.5, b=0.75）+ 元数据加权
+- **知识图谱**：JSONL 轻量图谱（7 种关系类型）
+- **输出格式**：Markdown + JSON 结构化
 
-#### 2. Multi-Agent Implementation (`legacy/multi_agent.py`)  
-- **Supervisor-Researcher Architecture**: Coordinated multi-agent system
-- **Parallel Processing**: Multiple researchers work simultaneously
-- **Speed Optimized**: Faster report generation through concurrency
-- **MCP Support**: Extensive Model Context Protocol integration
+## 数据安全
+
+- 内部文件和标准原文**不推入 Git 仓库**
+- 默认**禁用公网搜索**（`external_search_allowed=false`）
+- 每个结论必须有**可追溯的 evidence_id**
+- 无证据的"符合"判断**自动降级为"缺乏证据"**
+- 审计记忆中**只有人工确认的内容**才影响后续审查
+
+## License
+
+MIT

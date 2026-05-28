@@ -96,7 +96,11 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
     # Step 3: Analyze whether clarification is needed
     prompt_content = clarify_with_user_instructions.format(
         messages=get_buffer_string(messages), 
-        date=get_today_str()
+        date=get_today_str(),
+        assistant_name=configurable.assistant_name,
+        organization_name=configurable.organization_name,
+        business_region=configurable.business_region,
+        compliance_scope=configurable.compliance_scope,
     )
     response = await clarification_model.ainvoke([HumanMessage(content=prompt_content)])
     
@@ -149,13 +153,23 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
     # Step 2: Generate structured research brief from user messages
     prompt_content = transform_messages_into_research_topic_prompt.format(
         messages=get_buffer_string(state.get("messages", [])),
-        date=get_today_str()
+        date=get_today_str(),
+        assistant_name=configurable.assistant_name,
+        organization_name=configurable.organization_name,
+        business_region=configurable.business_region,
+        compliance_scope=configurable.compliance_scope,
+        external_search_allowed=configurable.external_search_allowed,
     )
     response = await research_model.ainvoke([HumanMessage(content=prompt_content)])
     
     # Step 3: Initialize supervisor with research brief and instructions
     supervisor_system_prompt = lead_researcher_prompt.format(
         date=get_today_str(),
+        assistant_name=configurable.assistant_name,
+        organization_name=configurable.organization_name,
+        business_region=configurable.business_region,
+        compliance_scope=configurable.compliance_scope,
+        external_search_allowed=configurable.external_search_allowed,
         max_concurrent_research_units=configurable.max_concurrent_research_units,
         max_researcher_iterations=configurable.max_researcher_iterations
     )
@@ -399,7 +413,12 @@ async def researcher(state: ResearcherState, config: RunnableConfig) -> Command[
     # Prepare system prompt with MCP context if available
     researcher_prompt = research_system_prompt.format(
         mcp_prompt=configurable.mcp_prompt or "", 
-        date=get_today_str()
+        date=get_today_str(),
+        assistant_name=configurable.assistant_name,
+        organization_name=configurable.organization_name,
+        business_region=configurable.business_region,
+        compliance_scope=configurable.compliance_scope,
+        external_search_allowed=configurable.external_search_allowed,
     )
     
     # Configure model with tools, retry logic, and settings
@@ -544,7 +563,10 @@ async def compress_research(state: ResearcherState, config: RunnableConfig):
     while synthesis_attempts < max_attempts:
         try:
             # Create system prompt focused on compression task
-            compression_prompt = compress_research_system_prompt.format(date=get_today_str())
+            compression_prompt = compress_research_system_prompt.format(
+                date=get_today_str(),
+                organization_name=configurable.organization_name,
+            )
             messages = [SystemMessage(content=compression_prompt)] + researcher_messages
             
             # Execute compression
@@ -643,7 +665,11 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
                 research_brief=state.get("research_brief", ""),
                 messages=get_buffer_string(state.get("messages", [])),
                 findings=findings,
-                date=get_today_str()
+                date=get_today_str(),
+                assistant_name=configurable.assistant_name,
+                organization_name=configurable.organization_name,
+                business_region=configurable.business_region,
+                compliance_scope=configurable.compliance_scope,
             )
             
             # Generate the final report

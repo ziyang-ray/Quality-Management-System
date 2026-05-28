@@ -1,10 +1,13 @@
 """Utility functions and helpers for the Deep Research agent."""
 
 import asyncio
+import fnmatch
 import logging
 import os
+import re
 import warnings
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 import aiohttp
@@ -528,6 +531,142 @@ async def load_mcp_tools(
 # Tool Utils
 ##########################
 
+INTERNAL_POLICY_SEARCH_DESCRIPTION = (
+    "Searches the configured internal compliance knowledge base. Use this before any "
+    "external search when answering internal policy, healthcare compliance, quality, "
+    "privacy, anti-corruption, procurement, marketing, or healthcare professional "
+    "interaction questions."
+)
+
+
+def _normalize_search_terms(text: str) -> list[str]:
+    """Extract simple search terms for local lexical retrieval."""
+    terms: list[str] = []
+    for term in re.findall(r"[\w\u4e00-\u9fff]+", text.lower()):
+        if len(term) <= 1:
+            continue
+        terms.append(term)
+        if re.search(r"[\u4e00-\u9fff]", term) and len(term) > 2:
+            terms.extend(term[index : index + 2] for index in range(len(term) - 1))
+
+    return list(dict.fromkeys(terms))
+
+
+def _read_internal_document(path: Path) -> str:
+    """Read supported internal document formats as plain text."""
+    if path.suffix.lower() == ".pdf":
+        try:
+            import fitz
+
+            with fitz.open(path) as document:
+                return "\n".join(page.get_text("text") for page in document)
+        except Exception as e:
+            return f"Could not read PDF {path.name}: {e}"
+
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception as e:
+        return f"Could not read document {path.name}: {e}"
+
+
+def _chunk_text(text: str, chunk_chars: int) -> list[str]:
+    """Split text into chunks with stable approximate size."""
+    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", text) if paragraph.strip()]
+    chunks: list[str] = []
+    current = ""
+
+    for paragraph in paragraphs:
+        if len(current) + len(paragraph) + 2 <= chunk_chars:
+            current = f"{current}\n\n{paragraph}".strip()
+            continue
+
+        if current:
+            chunks.append(current)
+        current = paragraph[:chunk_chars]
+
+    if current:
+        chunks.append(current)
+
+    return chunks or [text[:chunk_chars]]
+
+
+def _score_internal_chunk(query_terms: list[str], path: Path, chunk: str) -> int:
+    """Score a chunk with a simple transparent lexical ranker."""
+    searchable_text = f"{path.name}\n{chunk}".lower()
+    title_text = path.stem.lower()
+    score = 0
+    for term in query_terms:
+        score += searchable_text.count(term)
+        if term in title_text:
+            score += 3
+    return score
+
+
+@tool(description=INTERNAL_POLICY_SEARCH_DESCRIPTION)
+async def internal_policy_search(
+    queries: List[str],
+    config: RunnableConfig = None,
+) -> str:
+    """Search the configured local internal knowledge base."""
+    configurable = Configuration.from_runnable_config(config)
+    knowledge_base_path = configurable.internal_knowledge_base_path
+
+    if not knowledge_base_path:
+        return (
+            "Internal knowledge base is not configured. Set INTERNAL_KNOWLEDGE_BASE_PATH "
+            "or the internal_knowledge_base_path assistant configuration before relying "
+            "on internal policy citations."
+        )
+
+    root = Path(knowledge_base_path).expanduser()
+    if not root.exists() or not root.is_dir():
+        return f"Internal knowledge base path does not exist or is not a folder: {root}"
+
+    patterns = [
+        pattern.strip()
+        for pattern in configurable.internal_search_file_globs.split(",")
+        if pattern.strip()
+    ]
+    query_text = " ".join(queries)
+    query_terms = _normalize_search_terms(query_text)
+    if not query_terms:
+        return "No searchable terms were provided for internal policy search."
+
+    matches: list[tuple[int, Path, str]] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if patterns and not any(fnmatch.fnmatch(path.name, pattern) for pattern in patterns):
+            continue
+
+        content = _read_internal_document(path)
+        for chunk in _chunk_text(content, configurable.internal_search_chunk_chars):
+            score = _score_internal_chunk(query_terms, path, chunk)
+            if score > 0:
+                matches.append((score, path, chunk))
+
+    if not matches:
+        return (
+            "No matching internal policy documents were found. Try broader terms, "
+            "or verify the configured knowledge base path and file patterns."
+        )
+
+    matches.sort(key=lambda item: item[0], reverse=True)
+    selected_matches = matches[: configurable.internal_search_max_results]
+
+    formatted_output = "Internal compliance knowledge base results:\n\n"
+    for index, (score, path, chunk) in enumerate(selected_matches, start=1):
+        relative_path = path.relative_to(root)
+        formatted_output += f"--- INTERNAL SOURCE {index}: {relative_path} ---\n"
+        formatted_output += f"Score: {score}\n"
+        formatted_output += f"Path: {path}\n\n"
+        formatted_output += f"EXCERPT:\n{chunk}\n\n"
+        formatted_output += "-" * 80 + "\n\n"
+
+    return formatted_output
+
 async def get_search_tool(search_api: SearchAPI):
     """Configure and return search tools based on the specified API provider.
     
@@ -576,13 +715,28 @@ async def get_all_tools(config: RunnableConfig):
         List of all configured and available tools for research operations
     """
     # Start with core research tools
-    tools = [tool(ResearchComplete), think_tool]
+    tools = [tool(ResearchComplete), think_tool, internal_policy_search]
+
+    configurable = Configuration.from_runnable_config(config)
+    compliance_index = Path(configurable.compliance_index_path)
+    if (compliance_index / "chunks.jsonl").exists():
+        from open_deep_research.compliance.compliance_tools import (
+            get_compliance_index_summary,
+            search_internal_qms_documents,
+            search_standard_clauses,
+        )
+
+        tools.extend([
+            search_standard_clauses,
+            search_internal_qms_documents,
+            get_compliance_index_summary,
+        ])
     
     # Add configured search tools
-    configurable = Configuration.from_runnable_config(config)
     search_api = SearchAPI(get_config_value(configurable.search_api))
-    search_tools = await get_search_tool(search_api)
-    tools.extend(search_tools)
+    if configurable.external_search_allowed:
+        search_tools = await get_search_tool(search_api)
+        tools.extend(search_tools)
     
     # Track existing tool names to prevent conflicts
     existing_tool_names = {
