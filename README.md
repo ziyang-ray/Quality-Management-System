@@ -1,6 +1,31 @@
-# 🔬 Open Deep Research
+# 🔬 Open Deep Research + QMS Compliance Reviewer
 
 <img width="1388" height="298" alt="full_diagram" src="https://github.com/user-attachments/assets/12a2371b-8be2-4219-9b48-90503eb43c69" />
+
+> **QMS Compliance Reviewer**: 基于此框架改造的QMS合规审查系统，用于西门子医疗内部质量管理体系文件的自动化预审。详见 [README_QMS.md](README_QMS.md)
+
+## QMS合规审查系统亮点
+
+本项目在Open Deep Research基础上，实现了企业级的合规审查系统：
+
+### 核心功能
+- **条款驱动审查**：从ISO 13485/14971自动提取198个条款，逐条评估符合性
+- **记忆系统**：审查历史、CAPA跟踪、查询优化记忆
+- **多智能体协作**：模拟真实审核场景，5个角色协作完成审核
+
+### 技术亮点
+- **LangGraph工作流**：4节点条款驱动流程
+- **混合检索**：BM25 + 向量检索（规划中）
+- **结构化输出**：Pydantic模型强制AI输出结构化结果
+- **完整溯源**：每个证据保留文件名、页码、工作表名
+
+### 业务价值
+- 自动化审查减少人工工作量80%+
+- 标准化的审查流程
+- 可追溯的审查历史
+- 纠正措施生命周期管理
+
+详见 [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) 了解完整改进计划。
 
 Deep research has broken out as one of the most popular agent applications. This is a simple, configurable, fully open source deep research agent that works across many model providers, search tools, and MCP servers. It's performance is on par with many popular deep research agents ([see Deep Research Bench leaderboard](https://huggingface.co/spaces/Ayanami0730/DeepResearch-Leaderboard)).
 

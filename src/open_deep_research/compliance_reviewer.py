@@ -3,6 +3,7 @@
 import asyncio
 import os
 from collections import Counter
+from datetime import datetime
 from typing import Annotated
 
 from langchain_core.messages import AIMessage, HumanMessage, get_buffer_string
@@ -15,6 +16,12 @@ from open_deep_research.compliance.clause_store import ClauseStore
 from open_deep_research.compliance.clause_topic_mapping import (
     select_clauses_directly,
     select_topics_and_clauses,
+)
+from open_deep_research.compliance.memory import (
+    CAPATracker,
+    QueryMemory,
+    ReviewHistory,
+    ReviewSession,
 )
 from open_deep_research.compliance.prompts import (
     CLAUSE_ASSESSMENT_PROMPT,
@@ -42,6 +49,7 @@ class ClauseDrivenReviewerState(MessagesState):
     clause_evidence: dict  # "standard::clause_id" -> {standard_evidence, internal_evidence}
     assessments: list[dict]  # ClauseAssessment.model_dump() list
     final_report: str
+    session_id: str  # Unique session ID for memory tracking
 
 
 class EvidenceRetrievalState(TypedDict):
@@ -56,6 +64,9 @@ class EvidenceRetrievalState(TypedDict):
 # --- Helper functions ---
 
 _clause_store_cache: dict[str, ClauseStore] = {}
+_review_history: ReviewHistory | None = None
+_query_memory: QueryMemory | None = None
+_capa_tracker: CAPATracker | None = None
 
 
 def _load_clause_store(config: RunnableConfig) -> ClauseStore:
@@ -65,6 +76,35 @@ def _load_clause_store(config: RunnableConfig) -> ClauseStore:
     if path not in _clause_store_cache:
         _clause_store_cache[path] = ClauseStore.from_jsonl(path)
     return _clause_store_cache[path]
+
+
+def _get_review_history() -> ReviewHistory:
+    """Get or initialize review history."""
+    global _review_history
+    if _review_history is None:
+        _review_history = ReviewHistory()
+    return _review_history
+
+
+def _get_query_memory() -> QueryMemory:
+    """Get or initialize query memory."""
+    global _query_memory
+    if _query_memory is None:
+        _query_memory = QueryMemory()
+    return _query_memory
+
+
+def _get_capa_tracker() -> CAPATracker:
+    """Get or initialize CAPA tracker."""
+    global _capa_tracker
+    if _capa_tracker is None:
+        _capa_tracker = CAPATracker()
+    return _capa_tracker
+
+
+def _generate_session_id() -> str:
+    """Generate a unique session ID."""
+    return f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{id(object())}"
 
 
 def _merge_evidence(
@@ -185,6 +225,7 @@ def parse_review_scope(state: ClauseDrivenReviewerState, config: RunnableConfig)
     """
     clause_store = _load_clause_store(config)
     review_request = get_buffer_string(state.get("messages", []))
+    session_id = _generate_session_id()
 
     # Try direct clause ID matching first
     clauses = select_clauses_directly(review_request, clause_store)
@@ -199,6 +240,7 @@ def parse_review_scope(state: ClauseDrivenReviewerState, config: RunnableConfig)
     return {
         "review_request": review_request,
         "selected_clause_ids": [(c.standard, c.clause_id) for c in clauses],
+        "session_id": session_id,
     }
 
 
@@ -207,10 +249,13 @@ def retrieve_clause_evidence(state: ClauseDrivenReviewerState, config: RunnableC
 
     Round 1: Use clause.search_terms for initial retrieval
     Round 2: Supplement with expected_evidence keywords
+
+    Uses query memory to optimize retrieval based on past feedback.
     """
     configurable = Configuration.from_runnable_config(config)
     retriever = ComplianceRetriever.from_index_dir(configurable.compliance_index_path)
     clause_store = _load_clause_store(config)
+    query_memory = _get_query_memory()
 
     clause_evidence = {}
     for standard, clause_id in state["selected_clause_ids"]:
@@ -218,10 +263,13 @@ def retrieve_clause_evidence(state: ClauseDrivenReviewerState, config: RunnableC
         if not clause:
             continue
 
-        # Round 1: search with clause terms
-        query = " ".join(clause.search_terms[:8])
-        standard_evidence = retriever.search(query, source_type="standard", top_k=4)
-        internal_evidence = retriever.search(query, source_type="internal", top_k=6)
+        # Get optimized query from memory if available
+        base_query = " ".join(clause.search_terms[:8])
+        optimized_query = query_memory.get_optimized_query(clause_id, base_query)
+
+        # Round 1: search with optimized query
+        standard_evidence = retriever.search(optimized_query, source_type="standard", top_k=4)
+        internal_evidence = retriever.search(optimized_query, source_type="internal", top_k=6)
 
         # Round 2: supplement with expected_evidence keywords
         for ev_desc in clause.expected_evidence[:2]:
@@ -306,7 +354,10 @@ async def assess_clauses(state: ClauseDrivenReviewerState, config: RunnableConfi
 
 
 async def aggregate_report(state: ClauseDrivenReviewerState, config: RunnableConfig) -> dict:
-    """Aggregate individual clause assessments into a structured compliance report."""
+    """Aggregate individual clause assessments into a structured compliance report.
+
+    Also saves results to memory system for future reference.
+    """
     assessments = [ClauseAssessment(**a) for a in state["assessments"]]
 
     status_counts = Counter(a.status for a in assessments)
@@ -319,12 +370,60 @@ async def aggregate_report(state: ClauseDrivenReviewerState, config: RunnableCon
         limitations=_default_limitations(),
     )
 
+    # Save to memory system
+    session_id = state.get("session_id", _generate_session_id())
+    session = ReviewSession(
+        session_id=session_id,
+        timestamp=datetime.now().isoformat(),
+        request=state["review_request"],
+        assessments=[a.model_dump() for a in assessments],
+        status="pending",
+    )
+
+    # Save to review history
+    review_history = _get_review_history()
+    review_history.save_session(session, assessments)
+
+    # Create CAPAs for non-compliant findings
+    capa_tracker = _get_capa_tracker()
+    for assessment in assessments:
+        if assessment.status in ("需澄清", "缺乏证据", "未提及"):
+            from open_deep_research.compliance.memory.capa_tracker import Finding, CAPAPriority
+
+            finding = Finding(
+                finding_id=f"Finding-{session_id}-{assessment.clause_id}",
+                clause_id=assessment.clause_id,
+                standard=assessment.standard,
+                status=assessment.status,
+                rationale=assessment.rationale,
+                risk=assessment.risk,
+                recommendation=assessment.recommendation,
+                detected_date=datetime.now().isoformat(),
+            )
+
+            # Determine priority based on status
+            priority = CAPAPriority.MEDIUM
+            if assessment.status == "未提及":
+                priority = CAPAPriority.HIGH
+
+            capa_tracker.create_capa(
+                finding=finding,
+                priority=priority,
+                due_days=30,
+            )
+
     report_json = report.model_dump_json(ensure_ascii=False, indent=2)
     report_md = _report_to_markdown(report)
 
+    # Add memory summary to report
+    memory_summary = f"\n\n---\n**审查会话ID**: {session_id}"
+    memory_summary += f"\n**已保存到审查历史**: 是"
+    memory_summary += f"\n**创建CAPA数**: {sum(1 for a in assessments if a.status in ('需澄清', '缺乏证据', '未提及'))}"
+
     return {
         "final_report": report_json,
-        "messages": [AIMessage(content=report_md)],
+        "session_id": session_id,
+        "messages": [AIMessage(content=report_md + memory_summary)],
     }
 
 

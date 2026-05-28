@@ -44,13 +44,24 @@ QMS--main/
 │   │   ├── clause_topic_mapping.py    # 主题-条款映射
 │   │   ├── review_topics.py           # 审查主题定义
 │   │   ├── prompts.py                 # AI提示词模板
-│   │   └── compliance_tools.py        # LangChain工具
+│   │   ├── compliance_tools.py        # LangChain工具
+│   │   ├── memory/                    # 记忆系统
+│   │   │   ├── review_history.py      # 审查历史记忆
+│   │   │   ├── capa_tracker.py        # CAPA生命周期跟踪
+│   │   │   └── query_memory.py        # 查询优化记忆
+│   │   └── agents/                    # 多智能体系统
+│   │       ├── roles.py               # 角色定义
+│   │       ├── lead_auditor.py        # 主审核员智能体
+│   │       ├── department_rep.py      # 部门代表智能体
+│   │       └── orchestrator.py        # 审核协调器
 │   ├── compliance_reviewer.py         # 审查工作流（LangGraph）
 │   └── configuration.py               # 配置管理
 ├── scripts/
 │   ├── extract_standard_clauses.py    # 条款提取脚本
 │   ├── build_compliance_index.py      # 索引构建脚本
-│   └── run_compliance_review.py       # 审查运行脚本
+│   ├── run_compliance_review.py       # 审查运行脚本
+│   ├── run_multi_agent_audit.py       # 多智能体审核脚本
+│   └── demo.py                        # 演示脚本
 ├── tests/                             # 测试文件
 ├── 文件/                              # 本地文件（不提交到Git）
 │   ├── 官方文件/                      # ISO标准PDF
@@ -195,12 +206,74 @@ python -m pytest tests/test_clause_store.py -v
 3. **条款库**：自动提取的候选条款，部分可能需要人工校验
 4. **覆盖范围**：当前仅覆盖ISO 13485的10个核心领域
 
+## 记忆系统
+
+系统具备跨会话的记忆能力，能够学习和积累经验：
+
+### 审查历史记忆
+- 记录每次审查的结果
+- 追踪条款符合性趋势
+- 识别反复出现问题的条款
+
+### CAPA跟踪
+- 自动为不符合项创建CAPA
+- 跟踪CAPA生命周期（OPEN → IN_PROGRESS → VERIFIED → CLOSED）
+- 提醒超期未关闭的CAPA
+
+### 查询优化记忆
+- 记录检索查询的有效性
+- 自动优化查询策略
+- 积累术语同义词
+
+## 多智能体系统
+
+系统支持多智能体协作的审核模拟，模拟真实审核场景：
+
+### 角色定义
+
+| 角色 | 姓名 | 专业领域 | 性格特点 |
+|------|------|----------|----------|
+| 主审核员 | 张明 | ISO 13485/14971、审核技巧 | 严谨、客观、有条理 |
+| 技术专家 | 李华 | 医疗器械设计、制造工艺 | 技术导向、注重细节 |
+| 质量经理 | 王芳 | 质量体系管理、CAPA | 全局视角、注重体系 |
+| 文控专员 | 赵静 | 文件管理、记录控制 | 细致、规范 |
+| 部门代表 | 刘伟 | 部门流程、实际操作 | 配合、务实 |
+
+### 审核流程
+
+```
+主审核员制定计划
+    ↓
+部门代表介绍流程
+    ↓
+主审核员提问
+    ↓
+部门代表回答
+    ↓
+主审核员评估
+    ↓
+生成审核报告
+```
+
+### 运行多智能体审核
+
+```bash
+# 运行多智能体审核模拟
+python scripts/run_multi_agent_audit.py \
+  --request "请模拟审核CAPA和内部审核" \
+  --model "anthropic:claude-sonnet-4-20250514" \
+  --max-clauses 3 \
+  --output reports/multi_agent_audit.md
+```
+
 ## 后续计划
 
 - [ ] 支持旧格式文件（.doc/.xls/.pptx）
 - [ ] 建立测试用例集，量化审查准确率
-- [ ] 审查记忆系统（历史记录、纠正措施跟踪）
-- [ ] 多智能体协作
+- [x] 审查记忆系统（历史记录、纠正措施跟踪）
+- [x] 多智能体协作
+- [ ] 向量检索和混合检索
+- [ ] Web界面和可视化报告
 
 ## 许可证
 
