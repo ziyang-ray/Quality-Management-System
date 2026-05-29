@@ -1,6 +1,6 @@
 # Quality Management System Compliance Assistant
 
-基于 LangGraph 的西门子医疗内部质量体系合规审查 Agent 系统。
+基于 LangGraph 的内部质量体系合规审查 Agent 系统。
 
 按 ISO 13485:2016 / ISO 14971:2019 标准条款，对内部 QMS 文件进行证据驱动的自动化预审。
 
