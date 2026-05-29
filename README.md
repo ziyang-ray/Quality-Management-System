@@ -1,4 +1,4 @@
-# QMS Compliance Assistant
+# Quality Management System Compliance Assistant
 
 基于 LangGraph 的西门子医疗内部质量体系合规审查 Agent 系统。
 
